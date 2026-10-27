@@ -14,6 +14,8 @@ $tsubo = $b['menseki_m2'] ? round($b['menseki_m2'] * 0.3025, 2) : null;
 $yachin_per_tsubo = ($b['yachin'] && $tsubo && $tsubo > 0) ? round($b['yachin'] / $tsubo) : null;
 
 // 表示セクション定義
+$yoto_disp = $b['yoto'] ? str_replace('/', '・', $b['yoto']) : null;
+
 $sections = [
     '基本情報' => [
         '管理番号'     => $b['kanri_bangou'],
@@ -22,11 +24,11 @@ $sections = [
         'ステータス'   => $b['status'],
         'カテゴリー'   => $b['category'],
         '物件種目'     => $b['bukken_shurui'],
-        '用途'         => $b['yoto'],
-        '広告掲載'     => $b['ad_posting'],
+        '用途'         => $yoto_disp,
         '契約種別'     => $b['contract_type'],
     ],
     '立地・交通' => [
+        '市町村'   => $b['shichoson'],
         '所在地'   => $b['shozaichi'],
         '路線'     => $b['rosen'],
         '最寄り駅' => $b['moyori_eki'],
@@ -61,9 +63,13 @@ $sections = [
         '条件'     => $b['joken'],
     ],
     '取引情報' => [
-        '取引態様' => $b['torihiki_yosu'],
-        '手数料'   => $b['tesuryo'],
-        '案内方法' => $b['annai_hoho'],
+        '取引態様'     => $b['torihiki_yosu'],
+        '手数料有無'   => $b['tesuryo_umu'],
+        '手数料'       => $b['tesuryo'],
+        '案内方法'     => $b['annai_hoho_kubun'],
+        '案内方法（詳細）' => $b['annai_hoho'],
+        '広告掲載可否' => $b['ad_posting_kahi'],
+        '広告内容'     => $b['ad_naiyo'],
     ],
     '担当者情報' => [
         '担当者名'   => $b['staff_name'],
@@ -95,8 +101,8 @@ function h($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
     .container { max-width: 860px; margin: 0 auto; padding: 24px 16px; }
 
     /* 写真 */
-    .photo-area { margin-bottom: 20px; border-radius: 8px; overflow: hidden; max-height: 400px; background: #e8e8e8; display: flex; align-items: center; justify-content: center; }
-    .photo-area img { width: 100%; object-fit: cover; max-height: 400px; display: block; }
+    .photo-area { margin-bottom: 20px; border-radius: 8px; overflow: hidden; max-height: 600px; background: #e8e8e8; display: flex; align-items: center; justify-content: center; }
+    .photo-area img { width: 100%; object-fit: cover; max-height: 600px; display: block; }
     .photo-area .no-photo { color: #bbb; font-size: .9rem; padding: 60px 0; }
 
     /* ヒーロー */

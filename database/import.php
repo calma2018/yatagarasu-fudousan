@@ -55,9 +55,11 @@ try {
             hontai_setsubi, kakuko_setsubi, joken,
             torihiki_yosu, tesuryo, annai_hoho, biko,
             keisai_date, kakunin_date, kanri_gaisha,
-            status, ad_posting, contract_type, current_situation,
+            status, contract_type, current_situation,
             property_condition, staff_name, staff_contact,
-            frontage, ceiling_height, room_number, photo_path
+            frontage, ceiling_height, room_number, photo_path,
+            shichoson, tesuryo_umu, annai_hoho_kubun,
+            ad_posting_kahi, ad_naiyo
         ) VALUES (
             :kanri_bangou, :bukken_mei, :category, :bukken_shurui, :yoto,
             :shozaichi, :rosen, :moyori_eki, :toho_fun,
@@ -67,9 +69,11 @@ try {
             :hontai_setsubi, :kakuko_setsubi, :joken,
             :torihiki_yosu, :tesuryo, :annai_hoho, :biko,
             :keisai_date, :kakunin_date, :kanri_gaisha,
-            :status, :ad_posting, :contract_type, :current_situation,
+            :status, :contract_type, :current_situation,
             :property_condition, :staff_name, :staff_contact,
-            :frontage, :ceiling_height, :room_number, :photo_path
+            :frontage, :ceiling_height, :room_number, :photo_path,
+            :shichoson, :tesuryo_umu, :annai_hoho_kubun,
+            :ad_posting_kahi, :ad_naiyo
         )
     ';
     $stmt = $pdo->prepare($sql);
@@ -120,7 +124,6 @@ try {
             ':kakunin_date'      => $toDate($row['kakunin_date']     ?? null),
             ':kanri_gaisha'      => $toStr($row['kanri_gaisha']      ?? null),
             ':status'            => $toStr($row['status']            ?? null),
-            ':ad_posting'        => $toStr($row['ad_posting']        ?? null),
             ':contract_type'     => $toStr($row['contract_type']     ?? null),
             ':current_situation' => $toStr($row['current_situation'] ?? null),
             ':property_condition'=> $toStr($row['property_condition']?? null),
@@ -130,6 +133,11 @@ try {
             ':ceiling_height'    => $toStr($row['ceiling_height']    ?? null),
             ':room_number'       => $toStr($row['room_number']       ?? null),
             ':photo_path'        => $toStr($row['photo_path']        ?? null),
+            ':shichoson'         => $toStr($row['shichoson']         ?? null),
+            ':tesuryo_umu'       => $toStr($row['tesuryo_umu']       ?? null),
+            ':annai_hoho_kubun'  => $toStr($row['annai_hoho_kubun']  ?? null),
+            ':ad_posting_kahi'   => $toStr($row['ad_posting_kahi']   ?? null),
+            ':ad_naiyo'          => $toStr($row['ad_naiyo']          ?? null),
         ]);
         $count++;
     }

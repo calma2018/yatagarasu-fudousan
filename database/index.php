@@ -8,35 +8,37 @@ $where  = [];
 $params = [];
 $g = $_GET;
 
-// ステータス（複数チェックボックス）
+// 用途の固定分類（元データの 用途1〜用途8 を結合して yoto に格納している）
+$YOTO_CATEGORIES = ['飲食', 'オフィス・事務所', '美容・エステ・医療', '物販・サービス', '駐車場・倉庫', 'ガレージハウス・倉庫付き事務所', '沿道サービス・借地・工場', 'その他'];
+// 案内方法（選択式）の固定分類
+$ANNAI_HOHO_KUBUN = ['当社', '不明', '立会', '現地'];
+// 手数料有無の固定分類
+$TESURYO_UMU = ['あり', 'なし', '不明'];
+// ステータスの固定分類
+$STATUS_LIST = ['募集中', '入居済'];
+
+// ステータス（プルダウン）
 if (!empty($g['status'])) {
-    $ph = [];
-    foreach ($g['status'] as $i => $s) {
-        $k = ':st' . $i; $ph[] = $k; $params[$k] = $s;
-    }
-    $where[] = '`status` IN (' . implode(',', $ph) . ')';
+    $where[] = '`status` = :status'; $params[':status'] = $g['status'];
 }
 
-// 市（複数チェックボックス）
+// 市（複数チェックボックス／市町村列で判定）
 if (!empty($g['shicity'])) {
     $cc = [];
+    $idx = 0;
     foreach ($g['shicity'] as $city) {
         if ($city === 'その他') {
-            $cc[] = "(shozaichi NOT LIKE '%高槻市%' AND shozaichi NOT LIKE '%茨木市%' AND shozaichi NOT LIKE '%枚方市%')";
+            $cc[] = "(shichoson IS NULL OR shichoson = '' OR (shichoson NOT LIKE '%高槻%' AND shichoson NOT LIKE '%茨木%' AND shichoson NOT LIKE '%枚方%'))";
         } else {
-            $k = ':cy' . count($cc); $cc[] = "shozaichi LIKE $k"; $params[$k] = '%' . $city . '%';
+            $k = ':cy' . $idx++; $cc[] = "shichoson LIKE $k"; $params[$k] = '%' . $city . '%';
         }
     }
     if ($cc) $where[] = '(' . implode(' OR ', $cc) . ')';
 }
 
-// 駅（複数チェックボックス）
+// 最寄り駅（プルダウン）
 if (!empty($g['eki'])) {
-    $ec = [];
-    foreach ($g['eki'] as $i => $e) {
-        $k = ':eki' . $i; $ec[] = "moyori_eki = $k"; $params[$k] = $e;
-    }
-    $where[] = '(' . implode(' OR ', $ec) . ')';
+    $where[] = 'moyori_eki = :eki'; $params[':eki'] = $g['eki'];
 }
 
 // 徒歩（分以内）
@@ -44,21 +46,31 @@ if (isset($g['toho_max']) && $g['toho_max'] !== '') {
     $where[] = 'toho_fun <= :toho_max'; $params[':toho_max'] = (int)$g['toho_max'];
 }
 
-// 家賃レンジ
-if (!empty($g['yachin_range'])) {
-    $yr = $g['yachin_range'];
-    if ($yr === '1') { $where[] = 'yachin BETWEEN 1 AND 50000'; }
-    elseif ($yr === '2') { $where[] = 'yachin BETWEEN 50001 AND 100000'; }
-    elseif ($yr === '3') { $where[] = 'yachin BETWEEN 100001 AND 200000'; }
-    elseif ($yr === '4') { $where[] = 'yachin BETWEEN 200001 AND 300000'; }
-    elseif ($yr === '5') { $where[] = 'yachin BETWEEN 300001 AND 400000'; }
-    elseif ($yr === '6') { $where[] = 'yachin BETWEEN 400001 AND 500000'; }
-    elseif ($yr === '7') { $where[] = 'yachin > 500000'; }
+// 数値項目にカンマや円マークが含まれていても解釈できるようにする
+function numval($v) {
+    if ($v === null) return null;
+    $v = trim(str_replace([',', '，', '¥', '円'], '', $v));
+    return $v === '' ? null : $v;
 }
 
-// 面積（㎡以上）
-if (isset($g['menseki_min']) && $g['menseki_min'] !== '') {
-    $where[] = 'menseki_m2 >= :menseki_min'; $params[':menseki_min'] = (float)$g['menseki_min'];
+// 家賃/賃料（下限・上限）
+$yachin_min = numval($g['yachin_min'] ?? null);
+$yachin_max = numval($g['yachin_max'] ?? null);
+if ($yachin_min !== null) {
+    $where[] = 'yachin >= :yachin_min'; $params[':yachin_min'] = (int)$yachin_min;
+}
+if ($yachin_max !== null) {
+    $where[] = 'yachin <= :yachin_max'; $params[':yachin_max'] = (int)$yachin_max;
+}
+
+// 面積（下限・上限）
+$menseki_min = numval($g['menseki_min'] ?? null);
+$menseki_max = numval($g['menseki_max'] ?? null);
+if ($menseki_min !== null) {
+    $where[] = 'menseki_m2 >= :menseki_min'; $params[':menseki_min'] = (float)$menseki_min;
+}
+if ($menseki_max !== null) {
+    $where[] = 'menseki_m2 <= :menseki_max'; $params[':menseki_max'] = (float)$menseki_max;
 }
 
 // 坪数（坪以上）
@@ -76,9 +88,14 @@ if (!empty($g['bukken_shurui'])) {
     $where[] = 'bukken_shurui = :bukken_shurui'; $params[':bukken_shurui'] = $g['bukken_shurui'];
 }
 
-// 用途
+// 用途（チェックボックス複数選択／結合済みyotoに対してLIKE検索・OR条件）
 if (!empty($g['yoto'])) {
-    $where[] = 'yoto = :yoto'; $params[':yoto'] = $g['yoto'];
+    $yc = [];
+    $idx = 0;
+    foreach ($g['yoto'] as $y) {
+        $k = ':yoto' . $idx++; $yc[] = "yoto LIKE $k"; $params[$k] = '%' . $y . '%';
+    }
+    if ($yc) $where[] = '(' . implode(' OR ', $yc) . ')';
 }
 
 // 所在階
@@ -101,9 +118,14 @@ if (!empty($g['torihiki_yosu'])) {
     $where[] = 'torihiki_yosu = :torihiki_yosu'; $params[':torihiki_yosu'] = $g['torihiki_yosu'];
 }
 
-// 手数料
-if (!empty($g['tesuryo'])) {
-    $where[] = 'tesuryo LIKE :tesuryo'; $params[':tesuryo'] = '%' . $g['tesuryo'] . '%';
+// 手数料有無（プルダウン：あり／なし／不明）
+// 「不明」は NULL・空文字だけでなく、"あり"/"なし" 以外の値（空白文字など）も含めて判定する
+if (!empty($g['tesuryo_umu'])) {
+    if ($g['tesuryo_umu'] === '不明') {
+        $where[] = "(tesuryo_umu IS NULL OR TRIM(tesuryo_umu) = '' OR TRIM(tesuryo_umu) NOT IN ('あり', 'なし'))";
+    } else {
+        $where[] = 'tesuryo_umu = :tesuryo_umu'; $params[':tesuryo_umu'] = $g['tesuryo_umu'];
+    }
 }
 
 // 現況
@@ -111,14 +133,14 @@ if (!empty($g['current_situation'])) {
     $where[] = 'current_situation LIKE :current_situation'; $params[':current_situation'] = '%' . $g['current_situation'] . '%';
 }
 
-// 案内方法
-if (!empty($g['annai_hoho'])) {
-    $where[] = 'annai_hoho LIKE :annai_hoho'; $params[':annai_hoho'] = '%' . $g['annai_hoho'] . '%';
+// 案内方法（プルダウン：当社・不明・立会・現地）
+if (!empty($g['annai_hoho_kubun'])) {
+    $where[] = 'annai_hoho_kubun = :annai_hoho_kubun'; $params[':annai_hoho_kubun'] = $g['annai_hoho_kubun'];
 }
 
-// 広告掲載
-if (!empty($g['ad_posting'])) {
-    $where[] = 'ad_posting LIKE :ad_posting'; $params[':ad_posting'] = '%' . $g['ad_posting'] . '%';
+// 広告掲載可否（プルダウン）
+if (!empty($g['ad_posting_kahi'])) {
+    $where[] = 'ad_posting_kahi = :ad_posting_kahi'; $params[':ad_posting_kahi'] = $g['ad_posting_kahi'];
 }
 
 // 掲載日（以降）
@@ -143,15 +165,13 @@ $bukken_list = $stmt->fetchAll();
 $col = PDO::FETCH_COLUMN;
 $categories  = $pdo->query('SELECT DISTINCT category FROM bukken WHERE category IS NOT NULL ORDER BY category')->fetchAll($col);
 $shuruis     = $pdo->query('SELECT DISTINCT bukken_shurui FROM bukken WHERE bukken_shurui IS NOT NULL ORDER BY bukken_shurui')->fetchAll($col);
-$yotos       = $pdo->query('SELECT DISTINCT yoto FROM bukken WHERE yoto IS NOT NULL ORDER BY yoto')->fetchAll($col);
 $ekis        = $pdo->query('SELECT DISTINCT moyori_eki FROM bukken WHERE moyori_eki IS NOT NULL ORDER BY moyori_eki')->fetchAll($col);
 $kais        = $pdo->query('SELECT DISTINCT shozai_kai FROM bukken WHERE shozai_kai IS NOT NULL ORDER BY shozai_kai')->fetchAll($col);
 $torihikis   = $pdo->query('SELECT DISTINCT torihiki_yosu FROM bukken WHERE torihiki_yosu IS NOT NULL ORDER BY torihiki_yosu')->fetchAll($col);
-$annais      = $pdo->query('SELECT DISTINCT annai_hoho FROM bukken WHERE annai_hoho IS NOT NULL ORDER BY annai_hoho')->fetchAll($col);
+$ad_kahis    = $pdo->query('SELECT DISTINCT ad_posting_kahi FROM bukken WHERE ad_posting_kahi IS NOT NULL AND ad_posting_kahi <> \'\' ORDER BY ad_posting_kahi')->fetchAll($col);
 
-$sel_status  = $g['status']  ?? [];
 $sel_shicity = $g['shicity'] ?? [];
-$sel_eki     = $g['eki']     ?? [];
+$sel_yoto    = $g['yoto'] ?? [];
 
 function h($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
 function chk($arr, $val) { return in_array($val, (array)$arr) ? 'checked' : ''; }
@@ -204,7 +224,7 @@ function sel($cur, $val) { return ($cur ?? '') === $val ? 'selected' : ''; }
     .bukken-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
     .bukken-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); overflow: hidden; transition: box-shadow .2s; display: flex; flex-direction: column; }
     .bukken-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.15); }
-    .card-photo { height: 160px; background: #e8e8e8 url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="%23ccc"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-1.1 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>') center/32px no-repeat; overflow: hidden; }
+    .card-photo { height: 260px; background: #e8e8e8 url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="%23ccc"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-1.1 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>') center/32px no-repeat; overflow: hidden; }
     .card-photo img { width: 100%; height: 100%; object-fit: cover; }
     .card-header { background: #1a1a2e; color: #fff; padding: 8px 12px; font-size: .78rem; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 12px 14px; flex: 1; }
@@ -239,57 +259,55 @@ function sel($cur, $val) { return ($cur ?? '') === $val ? 'selected' : ''; }
       <div class="filter-grid">
 
         <!-- ステータス -->
-        <div class="filter-group" style="grid-column: 1 / -1;">
+        <div class="filter-group">
           <label class="group-label">ステータス</label>
-          <div class="cb-group">
-            <label><input type="checkbox" name="status[]" value="募集中" <?= chk($sel_status,'募集中') ?>> 募集中</label>
-            <label><input type="checkbox" name="status[]" value="入居済" <?= chk($sel_status,'入居済') ?>> 入居済</label>
-          </div>
+          <select name="status">
+            <option value="">すべて</option>
+            <?php foreach ($STATUS_LIST as $st): ?>
+              <option value="<?= h($st) ?>" <?= sel($g['status']??'',$st) ?>><?= h($st) ?></option>
+            <?php endforeach; ?>
+          </select>
         </div>
 
         <!-- 市 -->
         <div class="filter-group">
           <label class="group-label">市</label>
           <div class="cb-group">
-            <label><input type="checkbox" name="shicity[]" value="高槻市" <?= chk($sel_shicity,'高槻市') ?>> 高槻市</label>
-            <label><input type="checkbox" name="shicity[]" value="茨木市" <?= chk($sel_shicity,'茨木市') ?>> 茨木市</label>
-            <label><input type="checkbox" name="shicity[]" value="枚方市" <?= chk($sel_shicity,'枚方市') ?>> 枚方市</label>
+            <label><input type="checkbox" name="shicity[]" value="高槻" <?= chk($sel_shicity,'高槻') ?>> 高槻市</label>
+            <label><input type="checkbox" name="shicity[]" value="茨木" <?= chk($sel_shicity,'茨木') ?>> 茨木市</label>
+            <label><input type="checkbox" name="shicity[]" value="枚方" <?= chk($sel_shicity,'枚方') ?>> 枚方市</label>
             <label><input type="checkbox" name="shicity[]" value="その他" <?= chk($sel_shicity,'その他') ?>> その他</label>
           </div>
         </div>
 
         <!-- 駅（動的） -->
         <div class="filter-group">
-          <label class="group-label">最寄り駅（複数選択可）</label>
-          <div class="cb-scroll cb-group">
+          <label class="group-label">最寄り駅</label>
+          <select name="eki">
+            <option value="">すべて</option>
             <?php foreach ($ekis as $eki): ?>
-              <label><input type="checkbox" name="eki[]" value="<?= h($eki) ?>" <?= chk($sel_eki, $eki) ?>> <?= h($eki) ?></label>
+              <option value="<?= h($eki) ?>" <?= sel($g['eki']??'',$eki) ?>><?= h($eki) ?></option>
             <?php endforeach; ?>
-            <?php if (empty($ekis)): ?><span style="color:#aaa;font-size:.8rem">データなし</span><?php endif; ?>
-          </div>
+          </select>
         </div>
 
-        <!-- 家賃レンジ -->
+        <!-- 家賃/賃料 -->
         <div class="filter-group">
-          <label class="group-label">家賃/賃料</label>
-          <select name="yachin_range">
-            <option value="">すべて</option>
-            <option value="1" <?= sel($g['yachin_range']??'','1') ?>>〜50,000円</option>
-            <option value="2" <?= sel($g['yachin_range']??'','2') ?>>50,001〜100,000円</option>
-            <option value="3" <?= sel($g['yachin_range']??'','3') ?>>100,001〜200,000円</option>
-            <option value="4" <?= sel($g['yachin_range']??'','4') ?>>200,001〜300,000円</option>
-            <option value="5" <?= sel($g['yachin_range']??'','5') ?>>300,001〜400,000円</option>
-            <option value="6" <?= sel($g['yachin_range']??'','6') ?>>400,001〜500,000円</option>
-            <option value="7" <?= sel($g['yachin_range']??'','7') ?>>500,001円〜</option>
-          </select>
+          <label class="group-label">家賃/賃料（円）</label>
+          <div class="inline-inputs">
+            <input type="text" inputmode="numeric" name="yachin_min" value="<?= h($g['yachin_min']??'') ?>" placeholder="下限 例: 50000">
+            <span>〜</span>
+            <input type="text" inputmode="numeric" name="yachin_max" value="<?= h($g['yachin_max']??'') ?>" placeholder="上限（空欄可）">
+          </div>
         </div>
 
         <!-- 面積 -->
         <div class="filter-group">
-          <label class="group-label">面積（㎡以上）</label>
+          <label class="group-label">面積（㎡）</label>
           <div class="inline-inputs">
-            <input type="number" name="menseki_min" value="<?= h($g['menseki_min']??'') ?>" placeholder="例: 50" step="0.01">
-            <span>㎡〜</span>
+            <input type="text" inputmode="decimal" name="menseki_min" value="<?= h($g['menseki_min']??'') ?>" placeholder="下限">
+            <span>〜</span>
+            <input type="text" inputmode="decimal" name="menseki_max" value="<?= h($g['menseki_max']??'') ?>" placeholder="上限（空欄可）">
           </div>
         </div>
 
@@ -321,14 +339,13 @@ function sel($cur, $val) { return ($cur ?? '') === $val ? 'selected' : ''; }
           </div>
 
           <!-- 用途 -->
-          <div class="filter-group">
-            <label class="group-label">用途</label>
-            <select name="yoto">
-              <option value="">すべて</option>
-              <?php foreach ($yotos as $y): ?>
-                <option value="<?= h($y) ?>" <?= sel($g['yoto']??'',$y) ?>><?= h($y) ?></option>
+          <div class="filter-group" style="grid-column: 1 / -1;">
+            <label class="group-label">用途（複数選択可）</label>
+            <div class="cb-group">
+              <?php foreach ($YOTO_CATEGORIES as $y): ?>
+                <label><input type="checkbox" name="yoto[]" value="<?= h($y) ?>" <?= chk($sel_yoto, $y) ?>> <?= h($y) ?></label>
               <?php endforeach; ?>
-            </select>
+            </div>
           </div>
 
           <!-- 徒歩 -->
@@ -383,10 +400,15 @@ function sel($cur, $val) { return ($cur ?? '') === $val ? 'selected' : ''; }
             </select>
           </div>
 
-          <!-- 手数料 -->
+          <!-- 手数料有無 -->
           <div class="filter-group">
             <label class="group-label">手数料</label>
-            <input type="text" name="tesuryo" value="<?= h($g['tesuryo']??'') ?>" placeholder="例: 分かれ">
+            <select name="tesuryo_umu">
+              <option value="">すべて</option>
+              <?php foreach ($TESURYO_UMU as $tu): ?>
+                <option value="<?= h($tu) ?>" <?= sel($g['tesuryo_umu']??'',$tu) ?>><?= h($tu) ?></option>
+              <?php endforeach; ?>
+            </select>
           </div>
 
           <!-- 現況 -->
@@ -398,18 +420,23 @@ function sel($cur, $val) { return ($cur ?? '') === $val ? 'selected' : ''; }
           <!-- 案内方法 -->
           <div class="filter-group">
             <label class="group-label">案内方法</label>
-            <select name="annai_hoho">
+            <select name="annai_hoho_kubun">
               <option value="">すべて</option>
-              <?php foreach ($annais as $a): ?>
-                <option value="<?= h($a) ?>" <?= sel($g['annai_hoho']??'',$a) ?>><?= h($a) ?></option>
+              <?php foreach ($ANNAI_HOHO_KUBUN as $a): ?>
+                <option value="<?= h($a) ?>" <?= sel($g['annai_hoho_kubun']??'',$a) ?>><?= h($a) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
 
-          <!-- 広告掲載 -->
+          <!-- 広告掲載可否 -->
           <div class="filter-group">
-            <label class="group-label">広告掲載</label>
-            <input type="text" name="ad_posting" value="<?= h($g['ad_posting']??'') ?>" placeholder="例: 可">
+            <label class="group-label">広告掲載可否</label>
+            <select name="ad_posting_kahi">
+              <option value="">すべて</option>
+              <?php foreach ($ad_kahis as $ak): ?>
+                <option value="<?= h($ak) ?>" <?= sel($g['ad_posting_kahi']??'',$ak) ?>><?= h($ak) ?></option>
+              <?php endforeach; ?>
+            </select>
           </div>
 
           <!-- 掲載日 -->
@@ -481,6 +508,7 @@ function sel($cur, $val) { return ($cur ?? '') === $val ? 'selected' : ''; }
           <?= $tsubo ? '（' . $tsubo . '坪）' : '' ?>
           <?php if ($b['shozai_kai']): ?> / <?= h($b['shozai_kai']) ?><?php endif; ?>
           <?php if ($b['room_number']): ?> <?= h($b['room_number']) ?><?php endif; ?>
+          <?php if ($b['yoto']): ?><br>🏷 <?= h(str_replace('/', '・', $b['yoto'])) ?><?php endif; ?>
         </div>
 
         <div class="card-price">

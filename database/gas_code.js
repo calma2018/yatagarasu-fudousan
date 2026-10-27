@@ -1,58 +1,72 @@
 // ===================================================
 // Google Apps Script - 八咫烏不動産 DB連携
 // スプレッドシートの「拡張機能」→「Apps Script」で貼り付け
+// ※ 2026年8月 シート大幅改修版に対応
 // ===================================================
 
 var IMPORT_URL = 'https://yatagarasu-fudousan.co.jp/database/import.php';
 var SECRET_KEY = 'yatagarasu_secret_2026';
 
 // ===================================================
-// スプレッドシート列順（実際のシートに合わせた正しいマッピング）
+// スプレッドシート列順（database シートに合わせた正しいマッピング）
 // ===================================================
-// A(0)  管理番号
-// B(1)  物件名
-// C(2)  ステータス
-// D(3)  カテゴリー
-// E(4)  物件種目
-// F(5)  用途
-// G(6)  物件状態
-// H(7)  所在地
-// I(8)  路線
-// J(9)  最寄り駅
-// K(10) 徒歩（分）
-// L(11) 家賃/賃料（円）
-// M(12) 消費税（円）
-// N(13) 共益費/管理費
-// O(14) 敷金
-// P(15) 礼金
-// Q(16) 面積（㎡）
-// R(17) 所在階
-// S(18) 号室
-// T(19) 間取り
-// U(20) 間口
-// V(21) 天井高
-// W(22) 構造規模
-// X(23) 築年月
-// Y(24) 契約種別
-// Z(25) 契約期間
-// AA(26) 自動更新
-// AB(27) 駐車場
-// AC(28) 本体設備
-// AD(29) 各戸設備
-// AE(30) 条件
-// AF(31) 取引態様
-// AG(32) 手数料
-// AH(33) 現況
-// AI(34) 案内方法
-// AJ(35) 広告掲載
-// AK(36) 備考
-// AL(37) 掲載日
-// AM(38) 確認日
-// AN(39) 管理会社
-// AO(40) 担当者名
-// AP(41) 担当者連絡先
-// AQ(42) 画像名（例: sample.jpg）
+// A(0)   管理番号
+// B(1)   物件名
+// C(2)   ステータス
+// D(3)   カテゴリー
+// E(4)   物件種目
+// F(5)   用途1
+// G(6)   用途2
+// H(7)   用途3
+// I(8)   用途4
+// J(9)   用途5
+// K(10)  用途6
+// L(11)  用途7
+// M(12)  用途8            ※ F〜M は結合して1つの yoto として送信
+// N(13)  物件状態
+// O(14)  市町村
+// P(15)  所在地
+// Q(16)  路線
+// R(17)  最寄り駅
+// S(18)  徒歩（分）
+// T(19)  家賃/賃料（円）
+// U(20)  消費税（円）
+// V(21)  共益費/管理費
+// W(22)  敷金
+// X(23)  礼金
+// Y(24)  面積（㎡）
+// Z(25)  所在階
+// AA(26) 号室
+// AB(27) 間取り
+// AC(28) 間口
+// AD(29) 天井高
+// AE(30) 構造規模
+// AF(31) 築年月
+// AG(32) 契約種別
+// AH(33) 契約期間
+// AI(34) 自動更新
+// AJ(35) 駐車場
+// AK(36) 本体設備
+// AL(37) 各戸設備
+// AM(38) 条件
+// AN(39) 取引態様
+// AO(40) 手数料有無
+// AP(41) 手数料
+// AQ(42) 現況
+// AR(43) 案内方法選択（当社・不明・立会・現地）
+// AS(44) 案内方法（詳細）
+// AT(45) 広告掲載可否
+// AU(46) 広告内容
+// AV(47) 備考
+// AW(48) 掲載日
+// AX(49) 確認日
+// AY(50) 管理会社
+// AZ(51) 担当者名
+// BA(52) 担当者連絡先
+// BB(53) 画像名（例: img_001.png）
 // ===================================================
+
+var LAST_COL = 54; // A〜BB
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -74,7 +88,8 @@ function sendToDatabase() {
     return;
   }
 
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('database')
+            || SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   var lastRow = sheet.getLastRow();
 
   if (lastRow < 2) {
@@ -82,67 +97,90 @@ function sendToDatabase() {
     return;
   }
 
-  var dataRange = sheet.getRange(2, 1, lastRow - 1, 43); // A2:AQ最終行
+  var dataRange = sheet.getRange(2, 1, lastRow - 1, LAST_COL); // A2:BB最終行
   var rows = dataRange.getValues();
 
-  var keys = [
-    'kanri_bangou',       // A(0)  管理番号
-    'bukken_mei',         // B(1)  物件名
-    'status',             // C(2)  ステータス
-    'category',           // D(3)  カテゴリー
-    'bukken_shurui',      // E(4)  物件種目
-    'yoto',               // F(5)  用途
-    'property_condition', // G(6)  物件状態
-    'shozaichi',          // H(7)  所在地
-    'rosen',              // I(8)  路線
-    'moyori_eki',         // J(9)  最寄り駅
-    'toho_fun',           // K(10) 徒歩（分）
-    'yachin',             // L(11) 家賃/賃料（円）
-    'shohizei',           // M(12) 消費税（円）
-    'kyoekihi',           // N(13) 共益費/管理費
-    'shikikin',           // O(14) 敷金
-    'reikin',             // P(15) 礼金
-    'menseki_m2',         // Q(16) 面積（㎡）
-    'shozai_kai',         // R(17) 所在階
-    'room_number',        // S(18) 号室
-    'madori',             // T(19) 間取り
-    'frontage',           // U(20) 間口
-    'ceiling_height',     // V(21) 天井高
-    'kozo_kibo',          // W(22) 構造規模
-    'chikunen_tsuki',     // X(23) 築年月
-    'contract_type',      // Y(24) 契約種別
-    'keiyaku_kikan',      // Z(25) 契約期間
-    'jido_koshin',        // AA(26) 自動更新
-    'chushajo',           // AB(27) 駐車場
-    'hontai_setsubi',     // AC(28) 本体設備
-    'kakuko_setsubi',     // AD(29) 各戸設備
-    'joken',              // AE(30) 条件
-    'torihiki_yosu',      // AF(31) 取引態様
-    'tesuryo',            // AG(32) 手数料
-    'current_situation',  // AH(33) 現況
-    'annai_hoho',         // AI(34) 案内方法
-    'ad_posting',         // AJ(35) 広告掲載
-    'biko',               // AK(36) 備考
-    'keisai_date',        // AL(37) 掲載日
-    'kakunin_date',       // AM(38) 確認日
-    'kanri_gaisha',       // AN(39) 管理会社
-    'staff_name',         // AO(40) 担当者名
-    'staff_contact',      // AP(41) 担当者連絡先
-    'photo_path'          // AQ(42) 画像名（例: sample.jpg）
+  // F(5)〜M(12) の8列（用途1〜8）はまとめて1つの yoto にする
+  var YOTO_START = 5;
+  var YOTO_END   = 12; // inclusive
+
+  // yoto以降の項目は、F:M を1項目分に圧縮した後のインデックスに対応
+  var keysAfterYoto = [
+    'property_condition',  // N(13)  物件状態
+    'shichoson',            // O(14)  市町村
+    'shozaichi',             // P(15)  所在地
+    'rosen',                 // Q(16)  路線
+    'moyori_eki',            // R(17)  最寄り駅
+    'toho_fun',              // S(18)  徒歩（分）
+    'yachin',                // T(19)  家賃/賃料（円）
+    'shohizei',              // U(20)  消費税（円）
+    'kyoekihi',              // V(21)  共益費/管理費
+    'shikikin',              // W(22)  敷金
+    'reikin',                // X(23)  礼金
+    'menseki_m2',            // Y(24)  面積（㎡）
+    'shozai_kai',            // Z(25)  所在階
+    'room_number',           // AA(26) 号室
+    'madori',                // AB(27) 間取り
+    'frontage',              // AC(28) 間口
+    'ceiling_height',        // AD(29) 天井高
+    'kozo_kibo',             // AE(30) 構造規模
+    'chikunen_tsuki',        // AF(31) 築年月
+    'contract_type',         // AG(32) 契約種別
+    'keiyaku_kikan',         // AH(33) 契約期間
+    'jido_koshin',           // AI(34) 自動更新
+    'chushajo',              // AJ(35) 駐車場
+    'hontai_setsubi',        // AK(36) 本体設備
+    'kakuko_setsubi',        // AL(37) 各戸設備
+    'joken',                 // AM(38) 条件
+    'torihiki_yosu',         // AN(39) 取引態様
+    'tesuryo_umu',           // AO(40) 手数料有無
+    'tesuryo',               // AP(41) 手数料
+    'current_situation',     // AQ(42) 現況
+    'annai_hoho_kubun',      // AR(43) 案内方法選択
+    'annai_hoho',            // AS(44) 案内方法（詳細）
+    'ad_posting_kahi',       // AT(45) 広告掲載可否
+    'ad_naiyo',              // AU(46) 広告内容
+    'biko',                  // AV(47) 備考
+    'keisai_date',           // AW(48) 掲載日
+    'kakunin_date',          // AX(49) 確認日
+    'kanri_gaisha',          // AY(50) 管理会社
+    'staff_name',            // AZ(51) 担当者名
+    'staff_contact',         // BA(52) 担当者連絡先
+    'photo_path'             // BB(53) 画像名
   ];
+
+  function normalize(val) {
+    if (val instanceof Date) {
+      return Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd');
+    }
+    return (val === '' || val === null || val === undefined) ? null : String(val);
+  }
 
   var records = [];
   rows.forEach(function(row) {
     if (!row[1]) return; // 物件名(B列)が空の行はスキップ
 
     var record = {};
-    keys.forEach(function(key, i) {
-      var val = row[i];
-      if (val instanceof Date) {
-        val = Utilities.formatDate(val, 'Asia/Tokyo', 'yyyy-MM-dd');
-      }
-      record[key] = (val === '' || val === null || val === undefined) ? null : String(val);
+    record['kanri_bangou'] = normalize(row[0]);
+    record['bukken_mei']   = normalize(row[1]);
+    record['status']       = normalize(row[2]);
+    record['category']     = normalize(row[3]);
+    record['bukken_shurui']= normalize(row[4]);
+
+    // 用途1〜8（F:M）を「/」区切りで結合
+    var yotoParts = [];
+    for (var c = YOTO_START; c <= YOTO_END; c++) {
+      var v = normalize(row[c]);
+      if (v) yotoParts.push(v);
+    }
+    record['yoto'] = yotoParts.length ? yotoParts.join('/') : null;
+
+    // N(13)以降を順番にマッピング
+    keysAfterYoto.forEach(function(key, i) {
+      var colIndex = (YOTO_END + 1) + i; // N列 = 13
+      record[key] = normalize(row[colIndex]);
     });
+
     records.push(record);
   });
 
